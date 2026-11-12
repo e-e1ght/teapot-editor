@@ -1,9 +1,13 @@
 {
   "name": "teapot-agent",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Claude Code <-> 티팟(teapotchat.com) 제작창 MCP 브리지",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/e-e1ght/teapot-editor"
+  },
   "bin": {
     "teapot-agent": "server/index.js"
   },

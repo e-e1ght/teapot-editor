@@ -69,6 +69,34 @@ function status() {
 }
 bridge.onTabsChanged = () => broadcast({ type: "tabs", ...status() });
 
+// 업데이트 확인: GitHub 저장소의 package.json 버전과 비교한다 (6시간마다 한 번만 요청).
+// 보내는 정보는 없다(파일 하나를 읽기만 함). TEAPOT_NO_UPDATE_CHECK=1이면 확인하지 않는다.
+const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+const REPO = String(PKG.repository?.url ?? PKG.repository ?? "").replace(/^git\+/, "").replace(/\.git$/, "");
+let updateCache = null;
+function newerVersion(a, b) {
+  const p = (v) => String(v).replace(/^v/, "").split(".").map((x) => parseInt(x, 10) || 0);
+  const [x, y] = [p(a), p(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  return false;
+}
+async function checkUpdate() {
+  const base = { current: PKG.version, repo: REPO || null };
+  const m = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)$/.exec(REPO);
+  if (process.env.TEAPOT_NO_UPDATE_CHECK === "1" || !m) return { ...base, latest: null, newer: false };
+  if (updateCache && Date.now() - updateCache.at < 6 * 3600_000) return { ...base, ...updateCache.data };
+  try {
+    const r = await fetch(`https://raw.githubusercontent.com/${m[1]}/main/package.json`, { signal: AbortSignal.timeout(5000), cache: "no-store" });
+    if (!r.ok) throw new Error(String(r.status));
+    const latest = (await r.json()).version ?? null;
+    const data = { latest, newer: !!latest && newerVersion(latest, PKG.version) };
+    updateCache = { at: Date.now(), data };
+    return { ...base, ...data };
+  } catch (e) {
+    return { ...base, latest: null, newer: false, error: String(e.message ?? e) };
+  }
+}
+
 // 쓰기 전에 서버의 현재 저장본을 백업하고, 끝나면 편집기들에 알린다.
 async function handleRequest(body) {
   const { type, ...payload } = body;
@@ -184,6 +212,7 @@ const server = http.createServer(async (req, res) => {
     // 다른 사이트에서의 호출 차단: Origin은 자기 자신만, 쓰기 요청엔 커스텀 헤더 필수(프리플라이트 유발)
     if (origin && !SELF_ORIGINS.has(origin)) return sendJson(res, 403, { error: "forbidden origin" });
     if (url.pathname === "/api/status" && req.method === "GET") return sendJson(res, 200, status());
+    if (url.pathname === "/api/update" && req.method === "GET") return sendJson(res, 200, await checkUpdate());
     if (req.method !== "POST" || req.headers["x-teapot-agent"] !== "1") return sendJson(res, 403, { error: "forbidden" });
     try {
       const body = await readBody(req);

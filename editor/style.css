@@ -217,6 +217,13 @@ textarea.small-ed { padding: 5px 8px; min-height: 34px; border: 1px solid var(--
 .split > .form { flex: 1; min-width: 0; }
 .split > .preview { width: 46%; max-width: 720px; min-width: 320px; border-left: 1px solid var(--line); display: flex; flex-direction: column; }
 .split.no-preview > .preview { display: none; }
+.split > .preview.sized { max-width: none; min-width: 0; flex: none; }
+.split-handle { flex: none; width: 7px; margin: 0 -3px; position: relative; z-index: 2; cursor: col-resize; touch-action: none; }
+.split-handle::after { content: ""; position: absolute; inset: 0 3px; transition: background .15s; }
+.split-handle:hover::after, body.resizing .split-handle::after { background: var(--accent); }
+.split.no-preview > .split-handle { display: none; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe { pointer-events: none; }
 .pv-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--bg); flex-wrap: wrap; }
 .pv-bar > span:first-child { font-weight: 600; color: var(--text); }
 .pv-tip { flex: 1; }
@@ -394,6 +401,8 @@ body.mode-studio .layout, body.mode-studio .char-only, body.mode-studio #meter, 
 .st-progress { height: 3px; background: var(--line); }
 .st-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 .st-out-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-top: 1px solid var(--line); background: var(--panel); min-height: 38px; }
+.st-gen-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+.st-gen-bar .st-gen { flex: 1; }
 .st-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex-shrink: 1; }
 .st-gallery-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel); font-size: 13px; }
 .st-gallery-head strong { flex: 1; }
@@ -431,5 +440,28 @@ body.mode-studio #conn { display: none !important; }
 .jsx-warn-row { color: var(--warn); }
 @media (max-width: 1100px) {
   .split { flex-direction: column; }
-  .split > .preview { width: auto; max-width: none; min-width: 0; height: 48vh; flex: none; border-left: 0; border-top: 1px solid var(--line); }
+  .split > .preview, .split > .preview.sized { width: auto !important; max-width: none; min-width: 0; height: 48vh; flex: none; border-left: 0; border-top: 1px solid var(--line); }
+  .split-handle { display: none; }
 }
+
+/* 새 버전 알림 */
+.update-note { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border: 1px solid var(--accent, #0969da); border-radius: 999px; font-size: 12px; background: color-mix(in srgb, var(--accent, #0969da) 10%, transparent); }
+.update-note a { color: var(--accent, #0969da); text-decoration: none; }
+.update-note a:hover { text-decoration: underline; }
+.update-close { border: 0; background: transparent; color: var(--muted, #59636e); font-size: 14px; line-height: 1; padding: 0 6px; cursor: pointer; }
+.update-note.hidden { display: none; }
+
+/* 모델 · 공개 설정 */
+.settings-form .set-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 6px 18px 12px; }
+.settings-form .set-row input.line { margin: 0; }
+.settings-form .set-grow { flex: 1; min-width: 220px; max-width: 420px; display: flex; }
+.settings-form .set-grow input { flex: 1; }
+.settings-form input.num { width: 140px; }
+.settings-form input.bad { border-color: #cf222e; }
+.set-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.set-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 999px; padding: 3px 12px; font-size: 13px; cursor: pointer; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip-add { border: 1px dashed var(--line); background: transparent; border-radius: 999px; padding: 3px 12px; font-size: 13px; width: 150px; }
+.set-adv { border-bottom: 1px solid var(--line); }
+.set-adv > summary { padding: 10px 18px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }

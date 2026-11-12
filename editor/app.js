@@ -314,7 +314,7 @@ function buildTree(snap) {
       id: "settings", label: "설정",
       items: [
         {
-          id: "__settings", label: "모델 · 공개 설정", kind: "json",
+          id: "__settings", label: "모델 · 공개 설정", kind: "settings",
           get: (s) => Object.fromEntries(SETTINGS_KEYS.filter((k) => k in s).map((k) => [k, s[k]])),
           set: (s, v) => Object.assign(s, v),
           hint: "모델, 최대 출력 토큰, 장르, 대상, 공개 여부 등 (JSON)",
@@ -638,6 +638,7 @@ function renderPane() {
   if (it.kind === "info") return renderInfoPane(it);
   if (it.kind === "images") return renderImagesPane(it);
   if (it.kind === "start") return renderStartPane(it);
+  if (it.kind === "settings") return renderSettingsPane(it);
 
   const changed = () => refreshTreeItem(it.id);
   const f = fieldInput({
@@ -757,7 +758,7 @@ function renderRecordPane(it) {
             editor: () => edHost?.editor,
           });
     S.onEdit = () => pv.update();
-    pane.replaceChildren(paneHead(it, [pv.toggle]), hint, el("div", { class: "split" }, form, pv.el));
+    pane.replaceChildren(paneHead(it, [pv.toggle]), hint, splitView(form, pv.el));
   } else {
     S.onEdit = null;
     pane.replaceChildren(paneHead(it), hint, form);
@@ -894,6 +895,108 @@ function renderInfoPane(it) {
   first?.focus();
 }
 
+// 모델 · 공개 설정: 티팟 등록 화면의 선택지로 입력한다 (값의 형식은 티팟 저장 형식 그대로)
+// 모델 목록은 2026-11 티팟 기준이다. 목록에 없는 모델도 직접 입력할 수 있다.
+const TP_MODELS = {
+  Max: ["claude-fable-5", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "gemini-4-argon", "gemini-4-carbon", "muse-wonder", "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-5.5", "gpt-5.6-sol"],
+  Pro: ["claude-sonnet-5-5", "claude-sonnet-5", "claude-sonnet-4-6", "gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-3.8-flash", "gemini-3.5-flash", "deepseek-v4-pro", "glm-5.3", "glm-5.2", "glm-5.1", "gpt-5.4", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-luna", "kimi-k3"],
+  Flash: ["gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "deepseek-v4-flash", "deepseek-v3.2"],
+};
+const TP_GENRES = ["1:1 롤플레이", "다인 롤플레이", "시뮬레이션", "로맨스", "판타지", "현대", "무협", "BL", "역사", "일상"];
+const TP_TARGETS = ["남성향", "여성향", "전체"];
+const TP_PUBLICITY = [["0", "비공개"], ["1", "전체공개"], ["3", "링크공개"], ["2", "시리즈 전환 공개"]];
+
+function renderSettingsPane(it) {
+  const s = S.working;
+  const changed = () => refreshTreeItem(it.id);
+  const form = el("div", { class: "form settings-form" });
+  const row = (label, input, note) => form.append(el("div", { class: "field" }, el("label", {}, label, note ? el("span", { class: "note" }, note) : null), el("div", { class: "set-row" }, input)));
+  const select = (key, opts, { asNumber = false } = {}) => {
+    const cur = s[key];
+    const list = [...opts];
+    if (cur != null && cur !== "" && !list.some(([v]) => String(v) === String(cur))) list.push([String(cur), `${cur} (현재 값)`]);
+    const sel = el("select", { class: "sel" }, (cur == null || cur === "") ? el("option", { value: "" }, "선택 안 함") : null, list.map(([v, l]) => el("option", { value: v }, l)));
+    sel.value = cur == null ? "" : String(cur);
+    sel.addEventListener("change", () => ((s[key] = asNumber ? Number(sel.value) : sel.value), changed()));
+    return sel;
+  };
+  const check = (key, text) => {
+    const c = el("input", { type: "checkbox" });
+    c.checked = !!s[key];
+    c.addEventListener("change", () => ((s[key] = c.checked), changed()));
+    return el("label", { class: "set-check" }, c, text);
+  };
+
+  // 모델: 목록에서 고르거나 직접 입력
+  const model = el("input", { class: "line", type: "text", list: "tpModels", spellcheck: "false", placeholder: "예: gemini-3.8-flash" });
+  model.value = s.model ?? "";
+  model.addEventListener("input", () => ((s.model = model.value.trim()), changed()));
+  const dl = el("datalist", { id: "tpModels" }, Object.entries(TP_MODELS).flatMap(([g, ms]) => ms.map((m) => el("option", { value: m, label: g }))));
+  row("모델", el("div", { class: "set-grow" }, model, dl), "목록에서 고르거나 직접 입력");
+
+  const tok = el("input", { class: "line num", type: "number", step: "1" });
+  tok.value = s.max_output_token ?? "";
+  tok.addEventListener("input", () => ((s.max_output_token = tok.value === "" ? null : Number(tok.value)), changed()));
+  row("최대 출력 토큰", tok);
+
+  row("프롬프트 모드", select("prompt_mode", [["simple", "간단 (simple)"], ["detail", "상세 (detail)"]]), "티팟 제작창의 프롬프트 입력 방식");
+
+  // 장르: 눌러서 켜고 끄기 + 직접 추가
+  const genres = () => (Array.isArray(s.genre) ? s.genre : []);
+  const chips = el("div", { class: "set-chips" });
+  const drawChips = () => {
+    const all = [...new Set([...TP_GENRES, ...genres()])];
+    chips.replaceChildren(
+      ...all.map((g) => {
+        const on = genres().includes(g);
+        const b = el("button", { class: "chip" + (on ? " on" : ""), type: "button", "aria-pressed": on ? "true" : "false" }, g);
+        b.addEventListener("click", () => {
+          s.genre = on ? genres().filter((x) => x !== g) : [...genres(), g];
+          changed();
+          drawChips();
+        });
+        return b;
+      })
+    );
+    const add = el("input", { class: "chip-add", type: "text", placeholder: "+ 직접 추가 (Enter)" });
+    add.addEventListener("keydown", (e) => {
+      const v = add.value.trim();
+      if (e.key !== "Enter" || !v) return;
+      e.preventDefault();
+      if (!genres().includes(v)) s.genre = [...genres(), v];
+      changed();
+      drawChips();
+      chips.querySelector(".chip-add")?.focus();
+    });
+    chips.append(add);
+  };
+  drawChips();
+  row("장르", chips, "누르면 선택/해제");
+
+  row("대상", select("target", TP_TARGETS.map((t) => [t, t])));
+  row("공개 설정", select("publicity", TP_PUBLICITY));
+  form.append(el("div", { class: "field" }, el("label", {}, "옵션"), el("div", { class: "set-row" }, check("is_nsfw", "성인(NSFW) 캐릭터"), check("comments_enabled", "댓글 허용"))));
+
+  // 보통 바꿀 일이 없는 값들
+  const adv = el("details", { class: "set-adv" }, el("summary", {}, "고급 값 (보통 바꿀 필요 없음)"));
+  for (const key of ["conv_type", "template", "template_version", "recommended_llm"]) {
+    if (!(key in s)) continue;
+    const v = s[key];
+    const isObj = v !== null && typeof v === "object";
+    const inp = el("input", { class: "line", type: "text", spellcheck: "false", placeholder: "비우면 null" });
+    inp.value = v == null ? "" : isObj ? JSON.stringify(v) : String(v);
+    inp.addEventListener("input", () => {
+      const t = inp.value.trim();
+      if (isObj) { try { s[key] = t ? JSON.parse(t) : null; inp.classList.remove("bad"); } catch { inp.classList.add("bad"); return; } }
+      else s[key] = t === "" ? (v === "" ? "" : null) : typeof v === "number" ? Number(t) : t;
+      changed();
+    });
+    adv.append(el("div", { class: "field" }, el("label", {}, key), el("div", { class: "set-row" }, inp)));
+  }
+  if (adv.children.length > 1) form.append(adv);
+  $("#pane").replaceChildren(paneHead(it), form);
+}
+
 // 상황 이미지: 전부 한 화면에 카드로
 function renderImagesPane(it) {
   const imgs = S.working.circumstance_images ?? [];
@@ -941,15 +1044,48 @@ function renderStartPane(it) {
   form.append(formField("시작 메시지", msg.input, { count: msg.count, note: "유저에게 보이는 첫 메시지 · HTML 가능", big: true, key: "start_message" }));
   const pv = makePreview({ variant: "chat", source: () => st.start_message ?? "", editor: () => msg.input.editor, jsx: () => startJsx(st) });
   S.onEdit = () => pv.update();
-  $("#pane").replaceChildren(paneHead(it, [pv.toggle]), el("div", { class: "split" }, form, pv.el));
+  $("#pane").replaceChildren(paneHead(it, [pv.toggle]), splitView(form, pv.el));
   nm.input.focus();
+}
+
+// 편집 칸 | 미리보기 나란히 놓기. 가운데 손잡이를 끌어 너비를 바꾸고, 바꾼 너비는 기억한다 (두 번 클릭하면 기본값).
+function splitView(form, preview) {
+  const handle = el("div", { class: "split-handle", title: "끌어서 너비 조절 · 두 번 클릭하면 기본 너비", role: "separator", "aria-orientation": "vertical" });
+  const box = el("div", { class: "split" }, form, handle, preview);
+  const apply = (w) => {
+    if (w == null) return preview.style.removeProperty("width"), preview.classList.remove("sized");
+    const max = Math.max(260, box.clientWidth - 280);
+    preview.style.width = Math.round(Math.min(max, Math.max(260, w))) + "px";
+    preview.classList.add("sized");
+  };
+  queueMicrotask(() => apply(store.get("previewWidth", null)));
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing");
+    const right = box.getBoundingClientRect().right;
+    const move = (ev) => apply(right - ev.clientX);
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      document.body.classList.remove("resizing");
+      store.set("previewWidth", parseInt(preview.style.width, 10) || null);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up, { once: true });
+    handle.addEventListener("pointercancel", up, { once: true });
+  });
+  handle.addEventListener("dblclick", () => (store.set("previewWidth", null), apply(null)));
+  return box;
 }
 
 // ---------------- 티팟 미리보기 ----------------
 const PREVIEW_CSS = `
 *,::before,::after{box-sizing:border-box;border:0 solid;margin:0;padding:0}
 html,body{background:#fff}
-body{font-family:Pretendard,"Pretendard Variable",system-ui,sans-serif;color:oklch(14.5% 0 0);-webkit-font-smoothing:antialiased}
+/* 티팟과 같은 글꼴 선언: Pretendard 가변 글꼴 하나를 굵기 범위 없이 등록한다.
+   그래서 굵기 500 글자도 보통 굵기(400)로 그려지고, 굵게(strong)는 브라우저가 흉내 내 굵게 만든다. */
+@font-face{font-family:tp-pretendard;src:url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2");font-display:swap}
+body{font-family:tp-pretendard,system-ui,sans-serif;color:oklch(14.5% 0 0);-webkit-font-smoothing:antialiased}
 img,svg,video,canvas,audio,iframe,embed,object{display:block;vertical-align:middle}
 img,video{max-width:100%;height:auto}
 h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}
@@ -1075,7 +1211,6 @@ function makePreview({ variant, source, editor, jsx }) {
       ? `<div class="tp-head">${S.working.image ? `<img class="tp-avatar" src="${esc(S.working.image)}" alt="">` : `<div class="tp-avatar"></div>`}<span class="tp-name">${esc(S.working.char_name)}</span></div>`
       : "";
     return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>${PREVIEW_CSS}</style></head><body class="${variant}"><div class="tp-frame">${head}<div class="${variant === "chat" ? "tp-msg " : ""}tp-text"><div class="tp-root"></div></div></div></body></html>`;
   };
 
@@ -1839,7 +1974,22 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 
+// 새 버전 알림 (GitHub 저장소의 버전과 비교). "닫기"를 누르면 그 버전은 다시 알리지 않는다.
+async function checkUpdate() {
+  try {
+    const u = await fetch("/api/update").then((r) => r.json());
+    if (!u.newer || store.get("updateDismissed", null) === u.latest) return;
+    const note = $("#updateNote");
+    const link = el("a", { href: `${u.repo}#업데이트`, target: "_blank", rel: "noopener", title: `지금 버전 ${u.current} → 새 버전 ${u.latest}` }, `새 버전 ${u.latest}이 있어요 · 업데이트 방법`);
+    const close = el("button", { class: "update-close", title: "이 버전 알림 닫기", "aria-label": "알림 닫기" }, "×");
+    close.addEventListener("click", () => (store.set("updateDismissed", u.latest), note.classList.add("hidden")));
+    note.replaceChildren(link, close);
+    note.classList.remove("hidden");
+  } catch {}
+}
+
 connectEvents();
+checkUpdate();
 setInterval(() => {
   if (!started && S.tabs.length) start();
 }, 1000);

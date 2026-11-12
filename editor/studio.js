@@ -111,6 +111,12 @@ function buildStudio() {
       el("div", { class: "st-viewer", id: "stViewer" }, el("div", { class: "st-empty" }, "생성한 이미지가 여기에 표시됩니다.")),
       el("div", { class: "st-progress hidden", id: "stProgress" }, el("div", { class: "st-progress-bar", id: "stProgressBar" })),
       el("div", { class: "st-out-bar", id: "stOutBar" }),
+      // 생성 버튼은 결과 화면 쪽(생성 기록 바로 위)에 둔다. 설정을 아무리 내려도 항상 보이도록.
+      el("div", { class: "st-gen-bar" },
+        el("button", { class: "primary st-gen", id: "stGen", onclick: generate }, "생성 (Ctrl+Enter)"),
+        el("button", { class: "", id: "stCancel", disabled: true, onclick: () => sapi("/api/nai/cancel") }, "취소"),
+        el("span", { id: "stFree", class: "badge" })
+      ),
       el("div", { class: "st-gallery-head" }, el("strong", {}, "생성 기록"), el("button", { class: "small ghost", onclick: () => sapi("/api/assets/open").catch((e) => toast(e.message, true)) }, "폴더 열기"), el("button", { class: "small ghost", onclick: refreshGallery }, "새로고침")),
       el("div", { class: "st-gallery", id: "stGallery" })
     )
@@ -313,9 +319,6 @@ function renderForm() {
       )
     ),
     el("div", { class: "st-actions" },
-      el("button", { class: "primary st-gen", id: "stGen", onclick: generate }, "생성 (Ctrl+Enter)"),
-      el("button", { class: "", id: "stCancel", disabled: true, onclick: () => sapi("/api/nai/cancel") }, "취소"),
-      el("span", { id: "stFree", class: "badge" }),
       el("span", { class: "spacer" }),
       el("span", { class: "muted-num", id: "stPresetName" }, ST.activePreset ? `불러온 프롬프트: ${presetById(ST.activePreset)?.name ?? ""}` : ""),
       ST.activePreset ? el("button", { class: "small", onclick: () => savePreset(false), title: "Ctrl+S" }, "보관함에 덮어쓰기") : null
