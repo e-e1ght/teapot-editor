@@ -327,26 +327,23 @@ export function createNai(root) {
   // ---------- 결과 목록 / 파일 ----------
   async function listAssets(limit = 120) {
     const s = await settings();
-    const out = [];
+    // 하위 폴더와 파일 정보를 한꺼번에 읽는다 (이미지가 많아도 목록이 빨리 뜨도록)
     async function walk(dir) {
-      let ents = [];
-      try {
-        ents = await fs.readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const e of ents) {
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) await walk(p);
-        else if (e.name.toLowerCase().endsWith(".png")) {
-          const st = await fs.stat(p);
-          out.push({ file: path.relative(s.assetsDir, p).split(path.sep).join("/"), mtime: st.mtimeMs });
-        }
-      }
+      const ents = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+      const found = await Promise.all(
+        ents.map(async (e) => {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) return walk(p);
+          if (!e.name.toLowerCase().endsWith(".png")) return [];
+          const st = await fs.stat(p).catch(() => null);
+          return st ? [{ file: path.relative(s.assetsDir, p).split(path.sep).join("/"), mtime: st.mtimeMs }] : [];
+        })
+      );
+      return found.flat();
     }
-    await walk(s.assetsDir);
+    const out = await walk(s.assetsDir);
     out.sort((a, b) => b.mtime - a.mtime);
-    return out.slice(0, limit).map((x) => ({ ...x, url: "/assets/" + x.file.split("/").map(encodeURIComponent).join("/") }));
+    return out.slice(0, limit).map((x) => ({ ...x, url: assetUrl(x.file) }));
   }
 
   // assets 폴더 밖은 절대 내주지 않는다

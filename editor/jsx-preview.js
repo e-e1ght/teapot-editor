@@ -467,7 +467,7 @@ function makeJsxPreview({ record, editor }) {
     let compiled;
     try {
       showStatus("busy", [el("div", {}, "컴파일 중…"), ...nameNote]);
-      compiled = await compileJsx(code, name);
+      compiled = await compileJsxCached(code, name);
     } catch (e) {
       const m = /\((\d+):(\d+)\)/.exec(e.message);
       // 감싼 코드 첫 줄만큼 줄 번호를 보정한다
@@ -504,14 +504,8 @@ function makeJsxPreview({ record, editor }) {
     }
   };
   window.addEventListener("message", onMsg);
-  // 편집 화면이 바뀌면 리스너를 정리한다
-  const obs = new MutationObserver(() => {
-    if (!box.isConnected) {
-      window.removeEventListener("message", onMsg);
-      obs.disconnect();
-    }
-  });
-  queueMicrotask(() => obs.observe(document.body, { childList: true, subtree: true }));
+  // 편집 화면이 바뀌면 리스너를 정리한다 (app.js의 destroyEditors가 실행)
+  S.cleanups.push(() => window.removeEventListener("message", onMsg));
 
   reload.addEventListener("click", restart);
   showStatus("busy", [el("div", {}, "미리보기 준비 중…")]);

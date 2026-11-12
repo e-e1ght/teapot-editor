@@ -219,8 +219,6 @@ function renderForm() {
     saveDraft();
     renderForm();
   });
-  const free = d.width * d.height <= 1024 * 1024 && d.steps <= 28;
-
   const form = $("#stForm");
   form.replaceChildren(
     promptBox("prompt", "긍정 프롬프트", "장면 전체에 들어갈 태그나 문장 (예: 2girls, classroom, afternoon, sunlight)", 5),
@@ -325,7 +323,6 @@ function renderForm() {
     )
   );
   renderFreeBadge();
-  void free;
 }
 
 function renderFreeBadge() {

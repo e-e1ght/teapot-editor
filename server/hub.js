@@ -180,10 +180,17 @@ async function readBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
-async function serveFile(res, file) {
+// 브라우저가 매번 확인은 하되(no-cache), 파일이 그대로면 304로 답해 내용을 다시 보내지 않는다.
+// 파일을 고치면 크기·수정 시각이 달라져 바로 새 내용이 나간다.
+async function serveFile(req, res, file) {
   try {
+    const st = await fsp.stat(file);
+    if (!st.isFile()) throw new Error("not a file");
+    const etag = `"${st.size.toString(36)}-${Math.round(st.mtimeMs).toString(36)}"`;
+    const headers = { "Content-Type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream", "Cache-Control": "no-cache", ETag: etag };
+    if (req.headers["if-none-match"] === etag) return res.writeHead(304, headers).end();
     const buf = await fsp.readFile(file);
-    res.writeHead(200, { "Content-Type": MIME[path.extname(file)] ?? "application/octet-stream", "Cache-Control": "no-store" });
+    res.writeHead(200, headers);
     res.end(buf);
   } catch {
     res.writeHead(404).end("not found");
@@ -254,7 +261,7 @@ const server = http.createServer(async (req, res) => {
     if (req.headers["sec-fetch-site"] === "cross-site") return res.writeHead(403).end();
     const p = await nai.resolveAsset(decodeURIComponent(url.pathname.slice("/assets/".length)));
     if (!p || !/\.(png|json)$/i.test(p)) return res.writeHead(404).end();
-    return serveFile(res, p);
+    return serveFile(req, res, p);
   }
 
   // 편집기 정적 파일
@@ -262,7 +269,7 @@ const server = http.createServer(async (req, res) => {
   if (rel === "/") rel = "/index.html";
   const file = path.normalize(path.join(EDITOR_DIR, rel));
   if (!file.startsWith(EDITOR_DIR)) return res.writeHead(403).end();
-  return serveFile(res, file);
+  return serveFile(req, res, file);
 });
 
 bridge.attach();

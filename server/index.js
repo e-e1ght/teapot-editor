@@ -8,7 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { spawn } from "node:child_process";
 import { writeSnapshotDir, readSnapshotDir, TEXT_FIELDS, START_TEXT_FIELDS } from "./files.js";
-import { applyFile, PUT_KINDS } from "./put-file.js";
+import { applyFile, fnv1a, PUT_KINDS } from "./put-file.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WORKSPACE = path.resolve(process.env.TEAPOT_WORKSPACE ?? path.join(ROOT, "workspace"));
@@ -124,18 +124,15 @@ function tsToIso(t) {
 }
 
 // 티팟과 같은 JSX 컴파일 캐시 처리: 코드가 바뀌었으면 compiled_ast=null, compiled_hash=FNV-1a(code)
-function fnv1a(s) {
-  let t = 0x811c9dc5;
-  for (let n = 0; n < s.length; n++) (t ^= s.charCodeAt(n)), (t = Math.imul(t, 0x1000193));
-  return (t >>> 0).toString(16);
-}
 function refreshJsxHashes(snapshot) {
   const lists = [snapshot.jsx_components, ...(snapshot.start_settings ?? []).map((s) => s?.additional_jsx_components)];
   for (const list of lists) {
     for (const j of Array.isArray(list) ? list : []) {
-      if (j && typeof j.code === "string" && j.compiled_hash !== fnv1a(j.code)) {
+      if (!j || typeof j.code !== "string") continue;
+      const hash = fnv1a(j.code);
+      if (j.compiled_hash !== hash) {
         j.compiled_ast = null;
-        j.compiled_hash = fnv1a(j.code);
+        j.compiled_hash = hash;
       }
     }
   }

@@ -29,7 +29,19 @@ const el = (tag, attrs = {}, ...kids) => {
   return e;
 };
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
-const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+// 편집 중인 값(a)과 불러온 원본(b) 비교. 원본(S.original)은 불러온 뒤 바뀌지 않으므로
+// 원본 쪽 JSON 문자열은 한 번만 만들어 두고 다시 쓴다.
+const origJson = new WeakMap();
+const same = (a, b) => {
+  if (a === b) return true;
+  if (typeof a === "string" && typeof b === "string") return false;
+  let jb;
+  if (b !== null && typeof b === "object") {
+    jb = origJson.get(b);
+    if (jb === undefined) origJson.set(b, (jb = JSON.stringify(b)));
+  } else jb = JSON.stringify(b ?? null);
+  return JSON.stringify(a ?? null) === jb;
+};
 const store = {
   get(k, d) {
     try {
@@ -373,15 +385,31 @@ function matchesFilter(it) {
 function renderTree() {
   const tree = buildTree(S.working);
   indexTree(tree);
-  const nodes = tree.map((n) => renderFolder(n)).filter(Boolean);
+  const nodes = dirtyPass(() => tree.map((n) => renderFolder(n)).filter(Boolean));
   $("#tree").replaceChildren(...nodes);
   if (!nodes.length) $("#tree").append(el("div", { class: "tree-empty" }, "찾는 내용이 없어요."));
   updateTitleDirty();
 }
 
+// 트리를 한 번 훑는 동안에는 폴더별 결과를 기억해 둔다 (상위 폴더가 하위 폴더를 다시 계산하지 않게)
+let dirtyMemo = null;
+function dirtyPass(fn) {
+  dirtyMemo = new Map();
+  try {
+    return fn();
+  } finally {
+    dirtyMemo = null;
+  }
+}
 function folderDirty(n) {
-  if (n.list && !same(getPath(S.working, n.list.path), getPath(S.original, n.list.path))) return true;
-  return (n.items ?? []).some((it) => isDirty(ITEMS.get(it.id))) || (n.children ?? []).some(folderDirty);
+  const hit = dirtyMemo?.get(n.id);
+  if (hit !== undefined) return hit;
+  const dirty =
+    (!!n.list && !same(getPath(S.working, n.list.path), getPath(S.original, n.list.path))) ||
+    (n.items ?? []).some((it) => isDirty(ITEMS.get(it.id))) ||
+    (n.children ?? []).some(folderDirty);
+  dirtyMemo?.set(n.id, dirty);
+  return dirty;
 }
 
 // GitHub Octicons (16px)
@@ -495,14 +523,16 @@ function refreshTreeItem(id) {
 }
 
 function refreshMarks() {
-  for (const f of document.querySelectorAll(".folder")) {
-    const n = FOLDERS.get(f.dataset.id);
-    const row = f.firstElementChild;
-    const dirty = n ? folderDirty(n) : false;
-    const dot = row.querySelector(":scope > .dot");
-    if (dirty && !dot) row.querySelector(".label").after(el("span", { class: "dot", title: "변경됨" }));
-    if (!dirty && dot) dot.remove();
-  }
+  dirtyPass(() => {
+    for (const f of document.querySelectorAll("#tree .folder")) {
+      const n = FOLDERS.get(f.dataset.id);
+      const row = f.firstElementChild;
+      const dirty = n ? folderDirty(n) : false;
+      const dot = row.querySelector(":scope > .dot");
+      if (dirty && !dot) row.querySelector(".label").after(el("span", { class: "dot", title: "변경됨" }));
+      if (!dirty && dot) dot.remove();
+    }
+  });
   updateTitleDirty();
   updateMeter();
 }
@@ -540,9 +570,11 @@ function counter(limit) {
 
 // CodeMirror 편집기 (현재 화면에 있는 것들. 화면을 바꿀 때 정리한다)
 S.editors = [];
+S.cleanups = []; // 화면을 바꿀 때 한 번 실행할 정리 함수 (미리보기의 window 리스너 해제 등)
 function destroyEditors() {
   for (const e of S.editors) e.destroy();
   S.editors = [];
+  for (const f of S.cleanups.splice(0)) f();
 }
 const LANG_OF = { text: "markdown", html: "markdown", code: "js", json: "plain" };
 
@@ -1726,9 +1758,14 @@ async function load({ keepCurrent = true } = {}) {
   if (!S.cid) return;
   setBusy(true);
   try {
+    // 저장본 목록과 내용을 동시에 받는다. 목록을 보고 저장본이 바뀌면(없어진 저장본 등) 그때 다시 받는다.
+    const getCp = (cpid) => call("getCheckpoint", { characterId: S.cid, checkpointId: cpid });
+    const asked = S.cpid;
+    const early = asked ? getCp(asked) : null;
+    early?.catch(() => {});
     await loadCheckpoints();
     if (!S.cpid) throw new Error("저장본이 없어요.");
-    const r = await call("getCheckpoint", { characterId: S.cid, checkpointId: S.cpid });
+    const r = await (early && S.cpid === asked ? early : getCp(S.cpid));
     S.checkpoint = r.checkpoint;
     S.original = clone(r.checkpoint.snapshot);
     S.working = clone(r.checkpoint.snapshot);
