@@ -469,3 +469,4 @@ body.mode-studio #conn { display: none !important; }
 .update-text { color: var(--accent, #0969da); }
 .update-go { border: 0; border-radius: 999px; padding: 2px 10px; font-size: 12px; background: var(--accent, #0969da); color: #fff; cursor: pointer; }
 .update-go:disabled { opacity: .7; cursor: default; }
+.st-gallery-empty { grid-column: 1 / -1; padding: 8px 2px; font-size: 13px; }

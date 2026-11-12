@@ -492,7 +492,7 @@ async function refreshGallery() {
     g.replaceChildren(
       ...(unsaved.length || list.length
         ? [...unsaved.map((a) => thumb(a, a.id, " unsaved")), ...list.map((a) => thumb(a, a.file))]
-        : [el("div", { class: "muted" }, "아직 생성한 이미지가 없습니다.")])
+        : [el("div", { class: "muted st-gallery-empty" }, "아직 생성한 이미지가 없습니다.")])
     );
   } catch (e) {
     $("#stGallery").replaceChildren(el("div", { class: "muted" }, e.message));
