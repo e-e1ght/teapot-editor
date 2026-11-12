@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 외부 이미지(imgur 등)는 로컬 주소에서 온 요청을 막으므로, 다른 사이트에는 출처 주소를 보내지 않는다.
+     미리보기 안의 CSS 배경 이미지도 이 설정을 따른다. (no-referrer는 허브로 가는 저장 요청까지 막으므로 쓰지 않음) -->
+<meta name="referrer" content="same-origin">
+<title>티팟 편집기</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%232bb673'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">티팟 편집기</div>
+  <nav class="modes" aria-label="화면 전환">
+    <button class="mode" data-mode="char">캐릭터 편집</button>
+    <button class="mode" data-mode="studio">에셋 스튜디오</button>
+  </nav>
+  <div class="char char-only">
+    <span id="charName" class="char-name">—</span>
+    <select id="cpSelect" title="저장본"></select>
+    <button id="btnTabChar" class="ghost hidden" title="티팟 탭에서 열린 캐릭터로 전환">탭의 캐릭터 열기</button>
+  </div>
+  <div class="spacer"></div>
+  <span id="conn" class="conn char-only"><i></i><span>연결 확인 중</span></span>
+  <label class="opt char-only" title="저장 후 열려 있는 티팟 제작창을 새로고침해서 바로 반영"><input type="checkbox" id="optReload" checked> 저장 후 티팟 새로고침</label>
+  <button id="btnReload" class="ghost char-only" title="티팟 서버에서 다시 불러오기">다시 불러오기</button>
+  <button id="btnSaveNew" class="ghost char-only" title="기존 저장본은 그대로 두고 새 저장본으로 저장">새 저장본으로</button>
+  <button id="btnSave" class="primary char-only" title="Ctrl+S">저장</button>
+  <span id="anlas" class="studio-only anlas" title="NovelAI 잔여 Anlas"></span>
+  <button id="btnStudioSettings" class="ghost studio-only" title="NovelAI API 키·저장 폴더 설정">⚙ 설정</button>
+</header>
+
+<div id="banner" class="banner hidden"></div>
+
+<main class="layout">
+  <aside class="side">
+    <input id="treeFilter" class="tree-search" type="search" placeholder="항목·내용 검색 (Ctrl+Shift+F)" aria-label="항목 검색">
+    <nav id="tree" class="tree" aria-label="항목"></nav>
+  </aside>
+  <section id="pane" class="pane">
+    <div class="empty">왼쪽에서 항목을 고르세요.</div>
+  </section>
+</main>
+
+<main id="studio" class="studio"></main>
+
+<footer id="meter" class="meter hidden" title="티팟 제작창과 같은 방식으로 계산한 프롬프트 분량">
+  <div id="meterBar" class="meter-bar"></div>
+  <span id="meterChars" class="meter-num"></span>
+  <span id="meterTokens" class="meter-tok"></span>
+  <span id="meterBadge" class="badge"></span>
+  <span id="meterNote" class="meter-note"></span>
+</footer>
+
+<div id="toast" class="toast hidden"></div>
+<script src="vendor.js"></script>
+<script src="app.js"></script>
+<script src="jsx-preview.js"></script>
+<script src="studio.js"></script>
+</body>
+</html>

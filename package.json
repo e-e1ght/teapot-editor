@@ -1,0 +1,39 @@
+{
+  "name": "teapot-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude Code <-> 티팟(teapotchat.com) 제작창 MCP 브리지",
+  "bin": {
+    "teapot-agent": "server/index.js"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "hub": "node server/hub.js",
+    "editor": "node server/hub.js --open",
+    "hub:stop": "node scripts/stop-hub.mjs",
+    "build:vendor": "esbuild editor/src/vendor.js --bundle --format=iife --global-name=TPV --minify --outfile=editor/vendor.js",
+    "put": "node scripts/put-file.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "ws": "^8.18.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.13.1",
+    "@lezer/highlight": "^1.2.5",
+    "codemirror": "^6.0.2",
+    "esbuild": "^0.25.12",
+    "rehype-raw": "^7.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.2.0"
+  }
+}
