@@ -14,6 +14,7 @@ import { WebSocketServer } from "ws";
 import { Bridge, TEAPOT_ORIGINS } from "./bridge.js";
 import { backup } from "./files.js";
 import { createNai } from "./nai.js";
+import { applyUpdate, updateMode } from "./updater.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.TEAPOT_BRIDGE_PORT ?? 18765);
@@ -81,7 +82,7 @@ function newerVersion(a, b) {
   return false;
 }
 async function checkUpdate() {
-  const base = { current: PKG.version, repo: REPO || null };
+  const base = { current: PKG.version, repo: REPO || null, mode: updateMode(ROOT) };
   const m = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)$/.exec(REPO);
   if (process.env.TEAPOT_NO_UPDATE_CHECK === "1" || !m) return { ...base, latest: null, newer: false };
   if (updateCache && Date.now() - updateCache.at < 6 * 3600_000) return { ...base, ...updateCache.data };
@@ -95,6 +96,31 @@ async function checkUpdate() {
   } catch (e) {
     return { ...base, latest: null, newer: false, error: String(e.message ?? e) };
   }
+}
+
+// 한 번에 업데이트: 파일을 바꾼 뒤 허브를 새로 띄우고 이 허브는 끝낸다.
+// 새 허브는 --wait-port로 시작해, 이 허브가 포트를 놓을 때까지 기다렸다가 연다.
+let updating = false;
+async function runUpdate() {
+  if (updating) throw new Error("이미 업데이트 중입니다.");
+  updating = true;
+  try {
+    const result = await applyUpdate({ root: ROOT, repo: REPO, currentVersion: PKG.version, log: (m) => console.error(`[teapot-hub] 업데이트: ${m}`) });
+    result.restart = result.changed.length > 0 || result.npm;
+    if (result.restart) setTimeout(restartHub, 300);
+    return result;
+  } finally {
+    updating = false;
+  }
+}
+function restartHub() {
+  console.error("[teapot-hub] 새 버전으로 다시 시작합니다.");
+  const child = spawn(process.execPath, [path.join(ROOT, "server", "hub.js"), "--wait-port"], { cwd: ROOT, detached: true, stdio: "ignore", windowsHide: true });
+  child.unref();
+  for (const ws of liveClients) ws.terminate();
+  server.close();
+  server.closeAllConnections?.();
+  setTimeout(() => process.exit(0), 200);
 }
 
 // 쓰기 전에 서버의 현재 저장본을 백업하고, 끝나면 편집기들에 알린다.
@@ -238,6 +264,7 @@ const server = http.createServer(async (req, res) => {
         "/api/prompts/save": () => nai.savePrompts(body),
       }[url.pathname];
       if (studio) return sendJson(res, 200, { ok: true, result: await studio() });
+      if (url.pathname === "/api/update/apply") return sendJson(res, 200, { ok: true, result: await runUpdate() });
       if (url.pathname === "/api/shutdown") {
         sendJson(res, 200, { ok: true });
         setTimeout(() => process.exit(0), 100);
@@ -286,7 +313,13 @@ server.on("upgrade", (req, socket, head) => {
   bridge.handleUpgrade(req, socket, head);
 });
 
+let portTries = 0;
 server.on("error", (err) => {
+  // 업데이트 후 재시작: 이전 허브가 포트를 놓을 때까지 잠깐 기다린다
+  if (err.code === "EADDRINUSE" && process.argv.includes("--wait-port") && portTries++ < 50) {
+    setTimeout(() => server.listen(PORT, HOST), 300);
+    return;
+  }
   if (err.code === "EADDRINUSE") {
     // 이미 떠 있는 허브가 같은 폴더의 것이면 편집기만 열고, 다른 폴더(또는 다른 프로그램)면 안내 후 종료
     fetch(`http://${HOST}:${PORT}/api/status`, { signal: AbortSignal.timeout(2000) })

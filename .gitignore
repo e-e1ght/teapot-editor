@@ -3,3 +3,4 @@ workspace/
 backups/
 config/
 assets/
+.no-auto-update

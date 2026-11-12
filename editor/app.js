@@ -2013,16 +2013,67 @@ window.addEventListener("beforeunload", (e) => {
 
 // 새 버전 알림 (GitHub 저장소의 버전과 비교). "닫기"를 누르면 그 버전은 다시 알리지 않는다.
 async function checkUpdate() {
+  showUpdateResult();
   try {
     const u = await fetch("/api/update").then((r) => r.json());
     if (!u.newer || store.get("updateDismissed", null) === u.latest) return;
     const note = $("#updateNote");
-    const link = el("a", { href: `${u.repo}#업데이트`, target: "_blank", rel: "noopener", title: `지금 버전 ${u.current} → 새 버전 ${u.latest}` }, `새 버전 ${u.latest}이 있어요 · 업데이트 방법`);
+    const title = `지금 버전 ${u.current} → 새 버전 ${u.latest}`;
+    const kids = [el("span", { class: "update-text", title }, `새 버전 ${u.latest}이 있어요`)];
+    if (u.mode !== "disabled") {
+      const btn = el("button", { class: "update-go", title: "GitHub에서 새 파일을 받아 바꾸고 허브를 다시 시작합니다" }, "지금 업데이트");
+      btn.addEventListener("click", () => runUpdate(u, btn));
+      kids.push(btn);
+    }
+    kids.push(el("a", { href: `${u.repo}#업데이트`, target: "_blank", rel: "noopener", title: "업데이트 안내 (GitHub)" }, "안내"));
     const close = el("button", { class: "update-close", title: "이 버전 알림 닫기", "aria-label": "알림 닫기" }, "×");
     close.addEventListener("click", () => (store.set("updateDismissed", u.latest), note.classList.add("hidden")));
-    note.replaceChildren(link, close);
+    kids.push(close);
+    note.replaceChildren(...kids);
     note.classList.remove("hidden");
   } catch {}
+}
+
+// 버튼 하나로 업데이트: 허브가 새 파일을 받아 바꾸고 다시 시작하면, 이 창을 새로고침한다.
+async function runUpdate(u, btn) {
+  if (anyDirty()) return toast("저장하지 않은 변경 내용이 있어요. 먼저 저장하거나 되돌린 뒤 업데이트하세요.", true);
+  if (!confirm(`새 버전 ${u.latest}으로 업데이트할까요?
+
+· GitHub에서 새 파일을 받아 설치 폴더의 프로그램 파일을 바꿉니다.
+· API 키·프롬프트 보관함·생성 이미지·백업은 그대로 둡니다.
+· 바뀌는 파일은 backups/_update 폴더에 먼저 보관합니다.
+· 끝나면 허브가 다시 시작되고 이 창이 새로고침됩니다.`)) return;
+  btn.disabled = true;
+  btn.textContent = "업데이트 중…";
+  try {
+    const r = await fetch("/api/update/apply", { method: "POST", headers: { "Content-Type": "application/json", "X-Teapot-Agent": "1" }, body: "{}" }).then((x) => x.json());
+    if (!r.ok) throw new Error(r.error || "업데이트 실패");
+    const res = r.result;
+    try { sessionStorage.setItem("teapot-editor:updated", JSON.stringify(res)); } catch {}
+    if (!res.restart) return location.reload();
+    btn.textContent = "다시 시작 중…";
+    // 이전 허브가 꺼지고 새 허브가 뜰 때까지 기다린다
+    const oldPid = (await fetch("/api/status").then((x) => x.json()).catch(() => null))?.pid;
+    for (let i = 0; i < 60; i++) {
+      await new Promise((ok) => setTimeout(ok, 500));
+      const st = await fetch("/api/status", { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+      if (st?.hub && st.pid !== oldPid) return location.reload();
+    }
+    toast("허브가 다시 켜지지 않았어요. start-editor.bat으로 다시 실행해 주세요.", true);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "지금 업데이트";
+    toast("업데이트 실패: " + (e.message ?? e), true);
+  }
+}
+
+// 업데이트 직후 새로고침된 창에 결과를 알려 준다
+function showUpdateResult() {
+  let r = null;
+  try { r = JSON.parse(sessionStorage.getItem("teapot-editor:updated") || "null"); sessionStorage.removeItem("teapot-editor:updated"); } catch {}
+  if (!r) return;
+  const msg = r.changed.length ? `${r.to} 버전으로 업데이트했어요 (파일 ${r.changed.length}개${r.npm ? ", 패키지 다시 설치" : ""}).` : "이미 최신 파일이에요.";
+  toast(r.userscriptChanged ? msg + " 유저스크립트도 바뀌었으니 /teapot-agent.user.js 를 열어 다시 설치해 주세요." : msg);
 }
 
 connectEvents();
