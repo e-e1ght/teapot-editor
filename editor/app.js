@@ -1173,17 +1173,39 @@ function esc(s) {
 }
 
 // 시작 메시지 변수 치환 (줄 수는 그대로 유지)
-function chatSource(src) {
+// 바꾼 결과의 글자 위치를 원문 위치로 되돌리는 toOrig도 함께 돌려준다 (클릭 → 정확한 코드 위치 이동용)
+function chatSourceMapped(src) {
   const user = store.get("userName", "유저");
   const imgs = S.working.circumstance_images ?? [];
-  return String(src ?? "")
-    .replace(/\{char\}/g, S.working.char_name ?? "")
-    .replace(/\{user\}/g, user)
-    .replace(/\{\{img::([^}]*)\}\}/g, (m, name) => {
-      const hit = imgs.find((x) => (x.name ?? "") === name.trim());
-      return hit?.image ? `<img src="${esc(hit.image)}" alt="${esc(name)}">` : `<span class="tp-missing">이미지 없음: ${esc(name)}</span>`;
-    });
+  const text0 = String(src ?? "");
+  const edits = []; // [바뀐 글의 시작, 끝, 원문 시작, 끝]
+  let out = "", last = 0;
+  for (const m of text0.matchAll(/\{char\}|\{user\}|\{\{img::([^}]*)\}\}/g)) {
+    out += text0.slice(last, m.index);
+    let rep;
+    if (m[0] === "{char}") rep = S.working.char_name ?? "";
+    else if (m[0] === "{user}") rep = user;
+    else {
+      const hit = imgs.find((x) => (x.name ?? "") === m[1].trim());
+      rep = hit?.image ? `<img src="${esc(hit.image)}" alt="${esc(m[1])}">` : `<span class="tp-missing">이미지 없음: ${esc(m[1])}</span>`;
+    }
+    edits.push([out.length, out.length + rep.length, m.index, m.index + m[0].length]);
+    out += rep;
+    last = m.index + m[0].length;
+  }
+  out += text0.slice(last);
+  const toOrig = (n) => {
+    let shift = 0;
+    for (const [a, b, oa, ob] of edits) {
+      if (n < a) break;
+      if (n < b) return n === a ? oa : ob;
+      shift = ob - b;
+    }
+    return n + shift;
+  };
+  return { text: out, toOrig };
 }
+const chatSource = (src) => chatSourceMapped(src).text;
 
 // 미리보기 안의 외부 이미지(img·CSS 배경·@font-face)를 허브 중계 주소로 바꾼다.
 // imgur 같은 곳은 로컬 주소(127.0.0.1)에서 온 요청을 막기 때문. 화면 모양과 코드 줄 번호는 그대로다.
@@ -1257,12 +1279,20 @@ function makePreview({ variant, source, editor, jsx }) {
       if (seg.kind === "text") {
         if (!seg.value.trim()) continue;
         let html;
+        const m = chatSourceMapped(seg.value);
         try {
-          html = TPV.renderTeapot(chatSource(seg.value), { scope: ".tp-root", lineOffset: lineAt(seg.start) - 1 });
+          html = TPV.renderTeapot(m.text, { scope: ".tp-root", lineOffset: lineAt(seg.start) - 1 });
         } catch (e) {
           html = `<pre style="color:#c00">렌더링 오류: ${esc(e.message)}</pre>`;
         }
-        items.push({ key: "t:" + html, html });
+        // 렌더링 위치(바뀐 글 기준) → 원문 전체 기준 위치
+        const fix = (node) => {
+          for (const x of node.querySelectorAll("[data-src-from]")) {
+            x.dataset.srcFrom = seg.start + m.toOrig(Number(x.dataset.srcFrom));
+            x.dataset.srcTo = seg.start + m.toOrig(Number(x.dataset.srcTo));
+          }
+        };
+        items.push({ key: `t:${seg.start}:${html}`, html, fix });
         continue;
       }
       const lines = [lineAt(seg.start), lineAt(seg.end - 1)];
@@ -1272,11 +1302,11 @@ function makePreview({ variant, source, editor, jsx }) {
       if (!comp) {
         if (skip.has(call.name)) continue;
         const text = seg.inner.trim();
-        if (text) items.push({ key: "u:" + text, html: `<span class="tp-jsx-text" data-src-line="${lines[0]}" data-src-end="${lines[1]}">${esc(text)}</span>` });
+        if (text) items.push({ key: `u:${seg.start}:${text}`, html: `<span class="tp-jsx-text" data-src-line="${lines[0]}" data-src-end="${lines[1]}" data-src-from="${seg.start}" data-src-to="${seg.end}">${esc(text)}</span>` });
         continue;
       }
       const { props, urls } = extractJsxImages(call.props, S.working.circumstance_images);
-      items.push({ key: "j:" + JSON.stringify([comp.name, comp.code, props]), comp, props, lines });
+      items.push({ key: "j:" + JSON.stringify([comp.name, comp.code, props]), comp, props, lines, range: [seg.start, seg.end] });
       for (const u of urls) items.push({ key: "i:" + u, html: `<div class="tp-jsx-img"><img src="${esc(u)}" alt=""></div>` });
     }
     // 바뀐 위치만 교체
@@ -1286,6 +1316,7 @@ function makePreview({ variant, source, editor, jsx }) {
       if (old[i]?.dataset.key === it.key) {
         // 그대로 두되, 위쪽 글이 바뀌어 줄 번호가 밀렸을 수 있으니 고쳐 둔다
         if (it.lines) (old[i].dataset.srcLine = it.lines[0]), (old[i].dataset.srcEnd = it.lines[1]);
+        if (it.range) (old[i].dataset.srcFrom = it.range[0]), (old[i].dataset.srcTo = it.range[1]);
         return;
       }
       const node = doc.createElement("div");
@@ -1294,6 +1325,8 @@ function makePreview({ variant, source, editor, jsx }) {
         node.className = "tp-jsx";
         node.dataset.srcLine = it.lines[0];
         node.dataset.srcEnd = it.lines[1];
+        node.dataset.srcFrom = it.range[0];
+        node.dataset.srcTo = it.range[1];
         const f = doc.createElement("iframe");
         f.setAttribute("sandbox", "allow-scripts");
         f.setAttribute("title", `JSX ${it.comp.name}`);
@@ -1304,6 +1337,7 @@ function makePreview({ variant, source, editor, jsx }) {
       } else {
         node.className = "tp-seg";
         node.innerHTML = it.html;
+        it.fix?.(node);
         proxifyImages(node);
       }
       if (old[i]) old[i].replaceWith(node);
@@ -1387,7 +1421,12 @@ function makePreview({ variant, source, editor, jsx }) {
       e.preventDefault();
       const ed = editor();
       if (!ed) return;
-      ed.gotoLine(Number(t.dataset.srcLine), Number(t.dataset.srcEnd || t.dataset.srcLine));
+      if (t.dataset.srcFrom != null && ed.gotoRange) {
+        // 원문 위치 → 편집기 위치 (편집기는 줄바꿈 \r\n을 한 글자로 센다)
+        const src = String(source() ?? "");
+        const cm = (o) => o - (src.slice(0, o).match(/\r\n/g)?.length ?? 0);
+        ed.gotoRange(cm(Number(t.dataset.srcFrom)), cm(Number(t.dataset.srcTo)));
+      } else ed.gotoLine(Number(t.dataset.srcLine), Number(t.dataset.srcEnd || t.dataset.srcLine));
       t.classList.add("tp-hit");
       setTimeout(() => t.classList.remove("tp-hit"), 900);
     });

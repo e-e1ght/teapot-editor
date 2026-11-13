@@ -470,3 +470,4 @@ body.mode-studio #conn { display: none !important; }
 .update-go { border: 0; border-radius: 999px; padding: 2px 10px; font-size: 12px; background: var(--accent, #0969da); color: #fff; cursor: pointer; }
 .update-go:disabled { opacity: .7; cursor: default; }
 .st-gallery-empty { grid-column: 1 / -1; padding: 8px 2px; font-size: 13px; }
+.cm-tp-flash-mark { background: color-mix(in srgb, #f59e0b 40%, transparent); border-radius: 2px; outline: 1px solid color-mix(in srgb, #f59e0b 70%, transparent); }

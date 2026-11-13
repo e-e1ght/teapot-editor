@@ -75,6 +75,13 @@ const flashField = StateField.define({
       if (e.value == null) deco = Decoration.none;
       else {
         const b = new RangeSetBuilder();
+        if (e.value.mark) {
+          // 글자 범위만 강조 (HTML이 한 줄에 몰려 있어도 정확히 그 부분만)
+          const to = Math.max(e.value.to, e.value.from + 1);
+          b.add(e.value.from, Math.min(to, tr.state.doc.length), Decoration.mark({ class: "cm-tp-flash-mark" }));
+          deco = b.finish();
+          continue;
+        }
         for (let pos = e.value.from; pos <= e.value.to; ) {
           const line = tr.state.doc.lineAt(pos);
           b.add(line.from, line.from, Decoration.line({ class: "cm-tp-flash" }));
@@ -141,6 +148,19 @@ export function createEditor({ parent, doc = "", lang = "markdown", readOnly = f
       clearTimeout(flashTimer);
       flashTimer = setTimeout(() => view.dispatch({ effects: flashEffect.of(null) }), 1600);
     },
+    // 글자 위치(0부터) 범위를 선택하고 잠깐 강조
+    gotoRange(from, to = from) {
+      const len = view.state.doc.length;
+      from = Math.max(0, Math.min(len, from));
+      to = Math.max(from, Math.min(len, to));
+      view.dispatch({
+        selection: { anchor: from, head: to },
+        effects: [EditorView.scrollIntoView(from, { y: "center" }), flashEffect.of({ from, to, mark: true })],
+      });
+      view.focus();
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => view.dispatch({ effects: flashEffect.of(null) }), 1600);
+    },
   };
 }
 
@@ -178,14 +198,34 @@ function teapotSanitize() {
   };
 }
 
+// HTML 여는 태그의 끝(>) 위치. 따옴표 안의 >는 건너뛴다.
+function openTagEnd(src, i) {
+  let q = null;
+  for (let k = i + 1; k < src.length; k++) {
+    const c = src[k];
+    if (q) { if (c === q) q = null; }
+    else if (c === '"' || c === "'") q = c;
+    else if (c === ">") return k + 1;
+  }
+  return -1;
+}
+
 function teapotComponents(opts) {
-  return (tree) => {
+  return (tree, file) => {
+    const src = String(file);
     visit(tree, "element", (node) => {
       const p = (node.properties ||= {});
       const cls = (c) => (p.className = [...(Array.isArray(p.className) ? p.className : p.className ? [p.className] : []), c]);
       if (node.position && opts.lines) {
         p.dataSrcLine = node.position.start.line + (opts.lineOffset || 0);
         p.dataSrcEnd = node.position.end.line + (opts.lineOffset || 0);
+        // 정확한 글자 위치: HTML 요소는 여는 태그만, 마크다운 요소는 요소 전체
+        const a = node.position.start.offset, z = node.position.end.offset;
+        if (a != null && z != null) {
+          const tagEnd = src[a] === "<" ? openTagEnd(src, a) : -1;
+          p.dataSrcFrom = a;
+          p.dataSrcTo = tagEnd > a && tagEnd <= z ? tagEnd : z;
+        }
       }
       switch (node.tagName) {
         case "em":
