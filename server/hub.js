@@ -295,7 +295,7 @@ const server = http.createServer(async (req, res) => {
   let rel = decodeURIComponent(url.pathname);
   if (rel === "/") rel = "/index.html";
   const file = path.normalize(path.join(EDITOR_DIR, rel));
-  if (!file.startsWith(EDITOR_DIR)) return res.writeHead(403).end();
+  if (!file.startsWith(EDITOR_DIR + path.sep)) return res.writeHead(403).end();
   return serveFile(req, res, file);
 });
 

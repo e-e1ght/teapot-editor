@@ -67,8 +67,17 @@ export class Bridge {
     return t[t.length - 1] ?? null;
   }
 
+  // 가장 최근에 쓴 제작창 탭 (홈 화면 같은 다른 탭이 더 최근이어도 제작창을 고른다)
+  get activeCreator() {
+    return this.tabs.filter((c) => String(c.info.url ?? "").startsWith("/creator/")).at(-1) ?? null;
+  }
+
   request(type, payload = {}) {
-    const client = this.active;
+    // 새로고침은 제작창 탭에만 보낸다. 다른 요청(API 호출)은 로그인된 탭이면 어디서든 된다.
+    const client = type === "reload" ? this.activeCreator : this.active;
+    if (type === "reload" && !client) {
+      return Promise.reject(new Error("열려 있는 티팟 제작창 탭이 없습니다."));
+    }
     if (!client) {
       return Promise.reject(
         new Error("연결된 티팟 탭이 없습니다. 유저스크립트가 설치된 상태로 teapotchat.com 제작창을 열어주세요.")

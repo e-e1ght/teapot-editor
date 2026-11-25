@@ -1771,8 +1771,13 @@ function removeStart(i) {
 }
 
 // ---------------- 불러오기 / 저장 ----------------
+// 저장 시각 → 밀리초. 새 API(api.teapotchat.com)는 ISO 문자열, 예전 Cloud Functions는 {_seconds, _nanoseconds}.
 function ts(t) {
-  return t?._seconds ? t._seconds * 1000 + Math.round((t._nanoseconds ?? 0) / 1e6) : 0;
+  if (t == null) return 0;
+  if (typeof t === "string") return Date.parse(t) || 0;
+  if (typeof t === "number") return t;
+  const s = t._seconds ?? t.seconds;
+  return typeof s === "number" ? s * 1000 + Math.round((t._nanoseconds ?? t.nanoseconds ?? 0) / 1e6) : 0;
 }
 function fmt(t) {
   const n = ts(t);
@@ -2112,7 +2117,11 @@ function showUpdateResult() {
   try { r = JSON.parse(sessionStorage.getItem("teapot-editor:updated") || "null"); sessionStorage.removeItem("teapot-editor:updated"); } catch {}
   if (!r) return;
   const msg = r.changed.length ? `${r.to} 버전으로 업데이트했어요 (파일 ${r.changed.length}개${r.npm ? ", 패키지 다시 설치" : ""}).` : "이미 최신 파일이에요.";
-  toast(r.userscriptChanged ? msg + " 유저스크립트도 바뀌었으니 /teapot-agent.user.js 를 열어 다시 설치해 주세요." : msg);
+  let note = msg;
+  if (r.userscriptChanged) note += " 유저스크립트도 바뀌었으니 /teapot-agent.user.js 를 열어 다시 설치해 주세요.";
+  // MCP 서버(index.js)는 허브와 따로 Claude가 띄우므로, 허브가 다시 켜져도 예전 코드 그대로다
+  if (r.changed.some((f) => /^server\/(index|files|put-file)\.js$/.test(f))) note += " Claude 쪽 연결(MCP)도 바뀌었으니 Claude를 다시 시작해 주세요.";
+  toast(note);
 }
 
 connectEvents();

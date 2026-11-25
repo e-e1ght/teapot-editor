@@ -83,7 +83,8 @@ const safe = (fn) => async (args) => {
 };
 
 async function resolveIds({ characterId, checkpointId } = {}, { needCheckpoint = true } = {}) {
-  const info = (characterId && (checkpointId || !needCheckpoint)) ? {} : ((await ensureHub()).tabs.at(-1) ?? {});
+  // ID를 안 주면 가장 최근의 제작창 탭(cid가 있는 탭) 기준. 홈 화면 탭이 더 최근이어도 건너뛴다.
+  const info = (characterId && (checkpointId || !needCheckpoint)) ? {} : ((await ensureHub()).tabs.filter((t) => t.cid).at(-1) ?? {});
   const cid = characterId || info.cid;
   const cpid = checkpointId || info.cpid;
   if (!cid) throw new Error("characterId가 없습니다. 제작창 탭을 열거나 characterId를 지정하세요.");

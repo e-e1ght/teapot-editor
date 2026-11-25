@@ -119,9 +119,9 @@ export async function readSnapshotDir(dir) {
   let names = [];
   try {
     names = (await fs.readdir(sroot, { withFileTypes: true }))
-      .filter((d) => d.isDirectory())
+      .filter((d) => d.isDirectory() && /^\d+$/.test(d.name)) // 01, 02 … 만 (직접 만든 다른 폴더는 무시)
       .map((d) => d.name)
-      .sort();
+      .sort((a, b) => Number(a) - Number(b)); // 100개 이상이어도 순서 유지
   } catch (e) {
     if (e.code !== "ENOENT") throw e;
   }
