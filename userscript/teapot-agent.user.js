@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         teapot-agent bridge
 // @namespace    teapot-agent
-// @version      0.2.0
+// @version      0.3.0
 // @description  티팟 제작창을 로컬 teapot-agent(MCP 서버)와 연결합니다.
 // @match        https://teapotchat.com/*
 // @match        https://www.teapotchat.com/*
@@ -15,9 +15,16 @@
   window.__teapotAgent = true;
 
   const PORT = 18765;
-  const FUNCTIONS = "https://asia-northeast3-chat-ai-7a275.cloudfunctions.net/";
+  // 2026-11 티팟 업데이트로 기존 클라우드 함수(cloudfunctions.net)가 꺼지고 api.teapotchat.com으로 옮겨졌다.
+  const API = "https://api.teapotchat.com";
   // 저장 관련 함수만 허용. 등록(submitCharacter)과 삭제는 막아둔다.
-  const ALLOWED = new Set(["listCheckpoints", "getCheckpoint", "createCheckpoint", "updateCheckpoint", "renameCheckpoint"]);
+  const ROUTES = {
+    listCheckpoints: "/v1/characters/list-checkpoints",
+    getCheckpoint: "/v1/characters/get-checkpoint",
+    createCheckpoint: "/v1/characters/create-checkpoint",
+    updateCheckpoint: "/v1/characters/update-checkpoint",
+    renameCheckpoint: "/v1/characters/rename-checkpoint",
+  };
 
   let ws = null;
   let lastUrl = "";
@@ -69,18 +76,37 @@
   }
 
   async function callFunction(fn, data) {
-    if (!ALLOWED.has(fn)) throw new Error(`허용되지 않은 함수: ${fn}`);
-    const res = await fetch(FUNCTIONS + fn, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + (await idToken()) },
-      body: JSON.stringify({ data }),
-    });
-    const body = await res.json().catch(() => null);
-    if (!res.ok || body?.error) {
-      const e = body?.error;
-      throw new Error(`${fn} 실패 (${res.status})${e ? ": " + (e.message || e.status) : ""}`);
+    if (!Object.hasOwn(ROUTES, fn)) throw new Error(`허용되지 않은 함수: ${fn}`);
+    let payload = data ?? {};
+    // 티팟 제작창과 같게: 저장할 때 snapshot의 characters는 빼고 보낸다
+    if (payload.snapshot && typeof payload.snapshot === "object") {
+      const { characters, ...snapshot } = payload.snapshot;
+      payload = { ...payload, snapshot };
     }
-    return body?.result ?? body;
+    let res;
+    try {
+      res = await fetch(API + ROUTES[fn], {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + (await idToken()),
+          "X-Request-Id": crypto.randomUUID(),
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      throw new Error(`${fn} 네트워크 오류 (${API}): ${e?.message || e}`);
+    }
+    const body = await res.json().catch(() => null);
+    if (!res.ok || body?.error || body?.success === false) {
+      const e = body?.error;
+      const msg = typeof e === "string" ? e : e?.message || e?.code || e?.status;
+      throw new Error(`${fn} 실패 (${res.status})${msg ? ": " + msg : ""}`);
+    }
+    if (fn === "listCheckpoints" && body && typeof body.summaryOnly !== "boolean") {
+      body.summaryOnly = body.summary_only === true;
+    }
+    return body;
   }
 
   // 티팟 제작창과 같은 토큰 계산 API (Gemini 기준)
