@@ -119,8 +119,19 @@ function overview(cp) {
   };
 }
 
+// 저장 시각: 새 API(api.teapotchat.com)는 ISO 문자열, 예전 Cloud Functions는 {_seconds, _nanoseconds}.
+// 밀리초 단위 ISO로 맞춰서 비교(teapot_push 충돌 확인)가 어느 쪽에서 받아도 일관되게 한다.
 function tsToIso(t) {
-  return t?._seconds ? new Date(t._seconds * 1000 + Math.round((t._nanoseconds ?? 0) / 1e6)).toISOString() : null;
+  if (t == null) return null;
+  let ms = null;
+  if (typeof t === "string") ms = Date.parse(t);
+  else if (typeof t === "number") ms = t;
+  else if (typeof t === "object") {
+    const s = t._seconds ?? t.seconds;
+    const n = t._nanoseconds ?? t.nanoseconds ?? 0;
+    if (typeof s === "number") ms = s * 1000 + Math.round(n / 1e6);
+  }
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
 // 티팟과 같은 JSX 컴파일 캐시 처리: 코드가 바뀌었으면 compiled_ast=null, compiled_hash=FNV-1a(code)
