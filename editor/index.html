@@ -13,6 +13,9 @@
 </head>
 <body>
 <header class="topbar">
+  <button id="btnSide" class="ghost icon-btn char-only" title="사이드바 접기 (Ctrl+B)" aria-label="사이드바 접기" aria-expanded="true" aria-controls="side">
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 2.5v11" stroke="currentColor" stroke-width="1.3"/><rect class="side-fill" x="2.2" y="3.2" width="3.2" height="9.6" rx="1" fill="currentColor" opacity=".35"/></svg>
+  </button>
   <div class="brand">티팟 편집기</div>
   <span id="updateNote" class="update-note hidden"></span>
   <nav class="modes" aria-label="화면 전환">
@@ -37,7 +40,7 @@
 <div id="banner" class="banner hidden"></div>
 
 <main class="layout">
-  <aside class="side">
+  <aside id="side" class="side">
     <input id="treeFilter" class="tree-search" type="search" placeholder="항목·내용 검색 (Ctrl+Shift+F)" aria-label="항목 검색">
     <nav id="tree" class="tree" aria-label="항목"></nav>
   </aside>

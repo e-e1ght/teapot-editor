@@ -474,3 +474,11 @@ body.mode-studio #conn { display: none !important; }
 
 /* 미리보기 도구 버튼 묶음 (미리보기 숨기기 · 코드 이동) */
 .pv-tools { display: inline-flex; gap: 4px; align-items: center; }
+
+/* 사이드바 접기/펼치기 (상단바 왼쪽 버튼, Ctrl+B) */
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 4px 6px; line-height: 0; }
+.side { transition: width .18s ease; overflow: hidden; }
+body.side-collapsed .side { width: 0; border-right-width: 0; }
+body.side-collapsed .side > * { visibility: hidden; }
+body.side-collapsed #btnSide .side-fill { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .side { transition: none; } }

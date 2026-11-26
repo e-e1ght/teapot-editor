@@ -2061,6 +2061,20 @@ $("#treeFilter").addEventListener("input", (e) => {
     if (S.working) renderTree();
   }, 150);
 });
+// 사이드바(항목 목록) 접기/펼치기. 상태는 기억해 둔다.
+function setSide(open, remember = true) {
+  document.body.classList.toggle("side-collapsed", !open);
+  const b = $("#btnSide");
+  const label = open ? "사이드바 접기" : "사이드바 펼치기";
+  b.title = `${label} (Ctrl+B)`;
+  b.setAttribute("aria-label", label);
+  b.setAttribute("aria-expanded", String(open));
+  if (remember) store.set("sideOpen", open);
+}
+const sideOpen = () => !document.body.classList.contains("side-collapsed");
+setSide(store.get("sideOpen", true) !== false, false);
+$("#btnSide").addEventListener("click", () => setSide(!sideOpen()));
+
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
     e.preventDefault();
@@ -2068,7 +2082,12 @@ document.addEventListener("keydown", (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && e.shiftKey) {
     e.preventDefault();
+    if (!sideOpen()) setSide(true); // 검색하려면 사이드바가 보여야 한다
     $("#treeFilter").focus();
+  }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b" && !document.body.classList.contains("mode-studio")) {
+    e.preventDefault();
+    setSide(!sideOpen());
   }
 });
 window.addEventListener("beforeunload", (e) => {
