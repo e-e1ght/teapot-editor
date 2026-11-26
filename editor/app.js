@@ -1409,13 +1409,20 @@ function makePreview({ variant, source, editor, jsx }) {
     render();
     let hovered = null;
     doc.addEventListener("mouseover", (e) => {
-      const t = e.target.closest?.("[data-src-line]");
+      const t = jumpOn() ? e.target.closest?.("[data-src-line]") : null;
       if (hovered && hovered !== t) hovered.classList.remove("tp-hover");
       if (t) t.classList.add("tp-hover");
       hovered = t;
     });
     doc.addEventListener("mouseleave", () => hovered?.classList.remove("tp-hover"));
     doc.addEventListener("click", (e) => {
+      // 코드 이동이 꺼져 있으면 HTML 동작(펼치기, 탭 전환 등)을 그대로 둔다.
+      // 단, 링크는 미리보기 창이 다른 페이지로 넘어가지 않게 막는다(# 안쪽 이동은 허용).
+      if (!jumpOn()) {
+        const a = e.target.closest?.("a[href]");
+        if (a && !a.getAttribute("href").startsWith("#")) e.preventDefault();
+        return;
+      }
       const t = e.target.closest?.("[data-src-line]");
       if (!t) return;
       e.preventDefault();
@@ -1441,7 +1448,23 @@ function makePreview({ variant, source, editor, jsx }) {
     toggle.textContent = on ? "미리보기 숨기기" : "미리보기 보기";
   });
   queueMicrotask(() => box.closest(".split")?.classList.toggle("no-preview", !shown));
-  return { el: box, update, toggle };
+
+  // 클릭하면 코드로 이동 켜기/끄기 (모든 미리보기에 같이 적용, 기억해 둔다)
+  const jumpBtn = el("button", { class: "small ghost", title: "켜면 미리보기에서 클릭한 요소의 코드로 이동해요. 끄면 펼치기·탭 같은 HTML 동작을 그대로 확인할 수 있어요." });
+  const paintJump = () => {
+    jumpBtn.textContent = jumpOn() ? "코드 이동: 켜짐" : "코드 이동: 꺼짐";
+    jumpBtn.setAttribute("aria-pressed", String(jumpOn()));
+  };
+  jumpBtn.addEventListener("click", () => {
+    store.set("previewJump", !jumpOn());
+    paintJump();
+    frame.contentDocument?.querySelectorAll(".tp-hover").forEach((n) => n.classList.remove("tp-hover"));
+  });
+  paintJump();
+  return { el: box, update, toggle: el("span", { class: "pv-tools" }, toggle, jumpBtn) };
+}
+function jumpOn() {
+  return store.get("previewJump", true) !== false;
 }
 
 // ---------------- 분량 막대 (티팟 제작창과 같은 계산) ----------------
