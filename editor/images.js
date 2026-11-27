@@ -134,13 +134,17 @@ function renderImagesPane(it) {
   };
 
   // --- 동작 ---
-  const addFiles = async (files) => {
+  const addFiles = async (files, into = inFolder) => {
     if (!files.length) return;
+    if (into && into.image.length + files.length > IMG_FOLDER_MAX) return toast(`폴더 하나에는 ${IMG_FOLDER_MAX}장까지 넣을 수 있어요.`, true);
     const got = await convertFiles(files);
     if (!got.length) return;
-    if (inFolder) {
-      if (inFolder.image.length + got.length > IMG_FOLDER_MAX) return toast(`폴더 하나에는 ${IMG_FOLDER_MAX}장까지 넣을 수 있어요.`, true);
-      inFolder.image.push(...got.map((g) => g.url));
+    if (into) {
+      into.image.push(...got.map((g) => g.url));
+      if (into !== inFolder) {
+        toast(`「${into.name || "폴더"}」에 ${got.length}장을 넣었어요.`);
+        return rerender();
+      }
     } else {
       if (list.length + got.length > IMG_MAX) return toast(`이미지는 ${IMG_MAX}개까지 추가할 수 있어요.`, true);
       const nums = nextNums(list, got.length);
@@ -222,37 +226,38 @@ function renderImagesPane(it) {
     rerender();
   };
 
-  // 묶기: 끌어온 것(src)을 대상(dst)에 겹친다
-  const merge = (src, dst) => {
-    if (src === dst) return;
-    const sF = isFolderImg(src), dF = isFolderImg(dst);
-    if (!sF && !dF) {
-      // 낱장 + 낱장 → 대상 자리에 새 폴더 (이름·설명은 대상 것)
-      const folder = fixPublic({ id: newImgId(), image: [...imgsOf(src), ...imgsOf(dst)], name: dst.name, circumstance: dst.circumstance, publicImages: [...pubSet(src), ...pubSet(dst)] });
-      const at = Math.min(list.indexOf(src), list.indexOf(dst));
-      list.splice(list.indexOf(src), 1);
-      list.splice(list.indexOf(dst), 1);
-      list.splice(at, 0, folder);
-      toast("폴더로 묶었어요.");
-    } else if (!sF && dF) {
-      if (dst.image.length + 1 > IMG_FOLDER_MAX) return toast(`폴더 하나에는 ${IMG_FOLDER_MAX}장까지 넣을 수 있어요.`, true);
-      const pub = [...pubSet(dst), ...pubSet(src)];
-      dst.image.push(...imgsOf(src));
-      dst.publicImages = pub;
-      fixPublic(dst);
-      list.splice(list.indexOf(src), 1);
-      toast(`「${dst.name || "폴더"}」에 넣었어요.`);
-    } else if (sF && dF) {
-      if (dst.image.length + src.image.length > IMG_FOLDER_MAX) return toast(`폴더 하나에는 ${IMG_FOLDER_MAX}장까지 넣을 수 있어요.`, true);
-      if (!confirm(`「${src.name || "폴더"}」의 이미지 ${src.image.length}장을 「${dst.name || "폴더"}」로 옮기고 앞의 폴더는 없앨까요?`)) return;
-      const pub = [...pubSet(dst), ...pubSet(src)];
-      dst.image.push(...src.image);
-      dst.publicImages = pub;
-      fixPublic(dst);
-      list.splice(list.indexOf(src), 1);
-    } else {
-      return toast("폴더는 다른 폴더에만 합칠 수 있어요. 낱장 이미지를 폴더 위로 끌어 주세요.");
-    }
+  // 폴더(dst)에 넣기. 끌어온 것(srcs)이 폴더면 안의 이미지를 전부 옮기고 그 폴더는 없앤다.
+  const putInto = (srcs, dst) => {
+    srcs = srcs.filter((x) => x !== dst && list.includes(x));
+    if (!srcs.length) return;
+    const urls = srcs.flatMap(imgsOf);
+    if (dst.image.length + urls.length > IMG_FOLDER_MAX) return toast(`폴더 하나에는 ${IMG_FOLDER_MAX}장까지 넣을 수 있어요. (지금 ${dst.image.length}장 + ${urls.length}장)`, true);
+    const folders = srcs.filter(isFolderImg);
+    if (folders.length && !confirm(`폴더 ${folders.length}개의 이미지를 「${dst.name || "폴더"}」로 옮기고 그 폴더는 없앨까요?`)) return;
+    dst.publicImages = [...pubSet(dst), ...srcs.flatMap((x) => [...pubSet(x)])];
+    dst.image.push(...urls);
+    fixPublic(dst);
+    for (const x of srcs) list.splice(list.indexOf(x), 1);
+    IV.sel.clear();
+    toast(`「${dst.name || "폴더"}」에 ${urls.length}장을 넣었어요.`);
+    rerender();
+  };
+
+  // 묶기: 끌어온 것(srcs)을 대상(dst)에 겹친다
+  const merge = (srcs, dst) => {
+    srcs = srcs.filter((x) => x !== dst && list.includes(x));
+    if (!srcs.length) return;
+    if (isFolderImg(dst)) return putInto(srcs, dst);
+    // 낱장 위에 놓으면 → 대상 자리에 새 폴더 (이름·설명은 대상 것)
+    const urls = [...srcs.flatMap(imgsOf), ...imgsOf(dst)];
+    if (urls.length > IMG_FOLDER_MAX) return toast(`폴더 하나에는 ${IMG_FOLDER_MAX}장까지 넣을 수 있어요.`, true);
+    const all = [...srcs, dst];
+    const folder = fixPublic({ id: newImgId(), image: urls, name: dst.name, circumstance: dst.circumstance, publicImages: all.flatMap((x) => [...pubSet(x)]) });
+    const at = Math.min(...all.map((x) => list.indexOf(x)));
+    for (const x of all) list.splice(list.indexOf(x), 1);
+    list.splice(at, 0, folder);
+    IV.sel.clear();
+    toast(`${urls.length}장을 폴더로 묶었어요.`);
     rerender();
   };
 
@@ -300,25 +305,45 @@ function renderImagesPane(it) {
   const total = list.length;
   const grid = el("div", { class: "img-grid" });
 
-  const dragHandlers = (card, target, onDropInternal) => {
+  // 카드 위 어디에 놓는지: 폴더는 어느 방식이든 가운데에 놓으면 「폴더에 넣기」
+  const DROP_CLS = ["drop-merge", "drop-into", "drop-before", "drop-after"];
+  const clearDrop = (n) => n.classList.remove(...DROP_CLS);
+  const zoneOf = (card, e, isFolder) => {
+    const d = IV.drag;
+    const r = card.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    if (!d) return isFolder ? "into" : null; // 컴퓨터에서 끌어온 파일
+    if (d.mode === "merge") return isFolder ? "into" : "merge";
+    if (isFolder && d.kind === "item" && x > 0.25 && x < 0.75) return "into";
+    return x < 0.5 ? "before" : "after";
+  };
+  const dragHandlers = (card, target, isFolder, onDrop) => {
     card.addEventListener("dragover", (e) => {
-      if (!IV.drag || IV.drag.target === target) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      const r = card.getBoundingClientRect();
-      const after = e.clientX > r.left + r.width / 2;
-      card.classList.toggle("drop-merge", IV.drag.mode === "merge");
-      card.classList.toggle("drop-before", IV.drag.mode === "move" && !after);
-      card.classList.toggle("drop-after", IV.drag.mode === "move" && after);
-    });
-    card.addEventListener("dragleave", () => card.classList.remove("drop-merge", "drop-before", "drop-after"));
-    card.addEventListener("drop", (e) => {
-      if (!IV.drag) return;
+      const files = !IV.drag && e.dataTransfer?.types?.includes("Files");
+      if (!IV.drag && !files) return;
+      if (IV.drag && IV.drag.target === target) return;
+      const z = zoneOf(card, e, isFolder);
+      if (!z) return; // 파일을 낱장 카드 위에 놓으면 화면 전체 추가로 넘긴다
       e.preventDefault();
       e.stopPropagation();
-      card.classList.remove("drop-merge", "drop-before", "drop-after");
-      const r = card.getBoundingClientRect();
-      onDropInternal(e.clientX > r.left + r.width / 2);
+      e.dataTransfer.dropEffect = files ? "copy" : "move";
+      clearDrop(card);
+      card.classList.add("drop-" + z);
+    });
+    card.addEventListener("dragleave", (e) => {
+      if (!card.contains(e.relatedTarget)) clearDrop(card);
+    });
+    card.addEventListener("drop", (e) => {
+      const files = !IV.drag && e.dataTransfer?.files?.length;
+      if (!IV.drag && !files) return;
+      const z = zoneOf(card, e, isFolder);
+      clearDrop(card);
+      if (!z) return;
+      e.preventDefault();
+      e.stopPropagation();
+      $(".img-form")?.classList.remove("file-over");
+      if (files) return addFiles([...e.dataTransfer.files], target);
+      onDrop(z);
     });
   };
 
@@ -331,7 +356,10 @@ function renderImagesPane(it) {
   const handleOf = (card, payload) => {
     const h = el("div", { class: "img-thumb", draggable: "true", title: IV.mode === "merge" ? "끌어서 다른 이미지에 겹치면 폴더로 묶여요" : "끌어서 순서를 바꿔요" });
     h.addEventListener("dragstart", (e) => {
-      IV.drag = { ...payload, mode: payload.kind === "inner" ? "move" : IV.mode };
+      // 선택한 카드를 끌면 선택한 것 전부를 함께 옮긴다 (폴더에 넣기·묶기)
+      const many = payload.kind === "item" && IV.sel.has(payload.item) && IV.sel.size > 1 ? list.filter((x) => IV.sel.has(x)) : null;
+      IV.drag = { ...payload, many, mode: payload.kind === "inner" ? "move" : IV.mode };
+      if (many) document.querySelectorAll(".img-card.selected").forEach((n) => n.classList.add("dragging"));
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/x-teapot-image", "1");
       card.classList.add("dragging");
@@ -339,9 +367,9 @@ function renderImagesPane(it) {
     });
     h.addEventListener("dragend", () => {
       IV.drag = null;
-      card.classList.remove("dragging");
+      document.querySelectorAll(".img-card.dragging").forEach((n) => n.classList.remove("dragging"));
       $("#pane")?.classList.remove("img-dragging");
-      document.querySelectorAll(".drop-merge,.drop-before,.drop-after").forEach((n) => n.classList.remove("drop-merge", "drop-before", "drop-after"));
+      document.querySelectorAll(".drop-merge,.drop-into,.drop-before,.drop-after").forEach(clearDrop);
     });
     return h;
   };
@@ -409,13 +437,14 @@ function renderImagesPane(it) {
           btn("삭제", () => deleteItem(item), "danger")
         )
       );
-      dragHandlers(card, item, (after) => {
+      dragHandlers(card, item, folder, (zone) => {
         const d = IV.drag;
-        if (!d) return;
-        if (d.kind === "inner") return; // 폴더 안 이미지는 폴더 화면 안에서만
-        if (d.mode === "merge") return merge(d.item, item);
+        if (!d || d.kind === "inner") return; // 폴더 안 이미지는 폴더 화면 안에서만
+        const srcs = d.many ?? [d.item];
+        if (zone === "into") return putInto(srcs, item);
+        if (zone === "merge") return merge(srcs, item);
         const from = list.indexOf(d.item);
-        let to = list.indexOf(item) + (after ? 1 : 0);
+        const to = list.indexOf(item) + (zone === "after" ? 1 : 0);
         if (moveInArray(list, from, to)) rerender();
       });
       grid.append(card);
@@ -431,10 +460,10 @@ function renderImagesPane(it) {
         el("div", { class: "img-meta" }, check(i), el("span", { class: "muted-num" }, `${i + 1} / ${folder.image.length}`), pubSet(folder).has(u.trim()) ? el("span", { class: "muted-num" }, "갤러리 공개") : null),
         el("div", { class: "img-actions" }, btn("교체", () => replaceImage(folder, i)), btn("빼기", () => takeOut(folder, [i])), btn("삭제", () => deleteInner(folder, i), "danger"))
       );
-      dragHandlers(card, i, (after) => {
+      dragHandlers(card, i, false, (zone) => {
         const d = IV.drag;
         if (!d || d.kind !== "inner" || d.folder !== folder) return;
-        if (moveInArray(folder.image, d.index, i + (after ? 1 : 0))) rerender();
+        if (moveInArray(folder.image, d.index, i + (zone === "after" ? 1 : 0))) rerender();
       });
       grid.append(card);
     });
@@ -507,7 +536,7 @@ function renderImagesPane(it) {
 
   const hint = inFolder
     ? "폴더 안 이미지는 시작 메시지에서 {{img::폴더 이름}}으로 부르면 그중 하나가 무작위로 보여요. 끌어서 순서를 바꾸고, 「← 전체」로 끌어 놓으면 폴더에서 빠져요."
-    : "「묶기」일 때 이미지를 다른 이미지·폴더에 끌어다 놓으면 폴더로 묶여요(폴더는 그중 하나가 무작위로 보여요). 「이동」일 때는 순서만 바뀌어요. 파일을 이 화면에 끌어다 놓아도 추가돼요. 저장해야 티팟에 반영돼요.";
+    : "이미지를 폴더 카드 위에 끌어다 놓으면 폴더에 들어가요(「이동」일 때는 카드 가운데에 놓기). 「묶기」일 때 낱장끼리 겹치면 새 폴더가 돼요. 체크한 것을 끌면 함께 옮겨지고, 컴퓨터의 파일을 폴더 카드에 놓으면 그 폴더에 추가돼요. 저장해야 티팟에 반영돼요.";
 
   const form = el("div", { class: "form img-form" }, folderHead, tools, (inFolder ? inFolder.image.length : list.length) ? grid : el("div", { class: "muted img-empty" }, inFolder ? "빈 폴더예요. 이미지를 추가하거나 「← 전체」에서 이미지를 끌어 넣으세요." : "상황 이미지가 없어요. 「이미지 추가」를 누르거나 파일을 끌어다 놓으세요."));
 
