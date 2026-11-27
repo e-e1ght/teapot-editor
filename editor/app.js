@@ -188,7 +188,7 @@ const LIST_SCHEMAS = {
       { key: "circumstance", label: "상황 설명", kind: "line" },
     ],
     hidden: ["id", "publicImages"],
-    hint: "이미지 파일 업로드·교체는 티팟 미디어 관리에서 해 주세요. 여기서는 이름과 상황 설명만 고칠 수 있어요.",
+    hint: "이미지 추가·교체·삭제와 폴더 묶기는 「상황 이미지」 화면에서 할 수 있어요.",
   },
   recommended_answers: { label: "추천 답변", empty: "" },
 };
@@ -1029,39 +1029,7 @@ function renderSettingsPane(it) {
   $("#pane").replaceChildren(paneHead(it), form);
 }
 
-// 상황 이미지: 전부 한 화면에 카드로
-function renderImagesPane(it) {
-  const imgs = S.working.circumstance_images ?? [];
-  const changed = () => refreshTreeItem(it.id);
-  const grid = el("div", { class: "img-grid" });
-  imgs.forEach((img, i) => {
-    const name = el("input", { class: "line", type: "text", spellcheck: "false", placeholder: "이름" });
-    name.value = img.name ?? "";
-    name.addEventListener("input", () => ((img.name = name.value), (tag.textContent = `{{img::${name.value}}}`), changed()));
-    const circ = el("input", { class: "line", type: "text", spellcheck: "false", placeholder: "상황 설명" });
-    circ.value = img.circumstance ?? "";
-    circ.addEventListener("input", () => ((img.circumstance = circ.value), changed()));
-    const tag = el("code", { class: "img-tag", title: "클릭하면 복사돼요" }, `{{img::${img.name ?? ""}}}`);
-    tag.addEventListener("click", () => {
-      navigator.clipboard?.writeText(tag.textContent).then(() => toast("이미지 태그를 복사했어요."), () => {});
-    });
-    grid.append(
-      el(
-        "div",
-        { class: "img-card" },
-        img.image ? el("img", { src: img.image, alt: img.name ?? "", loading: "lazy" }) : el("div", { class: "img-none" }, "이미지 없음"),
-        el("div", { class: "img-meta" }, el("span", { class: "muted-num" }, `#${i + 1}`), tag),
-        name,
-        circ
-      )
-    );
-  });
-  $("#pane").replaceChildren(
-    paneHead(it, [el("span", { class: "count" }, `${imgs.length}장`)]),
-    el("div", { class: "hint" }, "이름과 상황 설명만 고칠 수 있어요. 이미지 파일 추가·교체·삭제는 티팟 미디어 관리에서 해 주세요. 시작 메시지에서는 {{img::이름}}으로 불러와요."),
-    el("div", { class: "form" }, imgs.length ? grid : el("div", { class: "muted" }, "상황 이미지가 없어요."))
-  );
-}
+// 상황 이미지 화면(renderImagesPane)은 images.js에 있다.
 
 // 시작 상황: 이름·상황 설명·시작 메시지 + 오른쪽 채팅 미리보기
 function renderStartPane(it) {
@@ -1186,8 +1154,10 @@ function chatSourceMapped(src) {
     if (m[0] === "{char}") rep = S.working.char_name ?? "";
     else if (m[0] === "{user}") rep = user;
     else {
+      // 폴더(image가 배열)는 채팅에서 무작위로 하나가 보인다. 미리보기는 흔들리지 않게 첫 장을 쓴다.
       const hit = imgs.find((x) => (x.name ?? "") === m[1].trim());
-      rep = hit?.image ? `<img src="${esc(hit.image)}" alt="${esc(m[1])}">` : `<span class="tp-missing">이미지 없음: ${esc(m[1])}</span>`;
+      const src = Array.isArray(hit?.image) ? hit.image.find((u) => typeof u === "string" && u) : hit?.image;
+      rep = src ? `<img src="${esc(src)}" alt="${esc(m[1])}">` : `<span class="tp-missing">이미지 없음: ${esc(m[1])}</span>`;
     }
     edits.push([out.length, out.length + rep.length, m.index, m.index + m[0].length]);
     out += rep;

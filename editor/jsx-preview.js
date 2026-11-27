@@ -400,7 +400,11 @@ function extractJsxImages(props, images) {
   const RE = /\{\{img(?:::|:)\s*([^}]*?)\s*\}\}/g, urls = [];
   const norm = (s) => s.normalize("NFC").trim().toLowerCase();
   const map = {};
-  for (const im of images ?? []) if (im?.name && im.image) map[norm(im.name)] = im.image;
+  for (const im of images ?? []) {
+    // 폴더(image 배열)는 미리보기에서 첫 장
+    const u = Array.isArray(im?.image) ? im.image.find((x) => typeof x === "string" && x) : im?.image;
+    if (im?.name && u) map[norm(im.name)] = u;
+  }
   const resolve = (n) => (/^(https?:\/\/|\/)/.test(n) ? n : map[norm(n)] ?? "");
   const walk = (v) => {
     if (typeof v === "string") {
